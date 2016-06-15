@@ -2182,8 +2182,7 @@ gtk_menu_popup_at_rect (GtkMenu            *menu,
                            button,
                            activate_time);
 
-  if (current_event)
-    gdk_event_free (current_event);
+  g_clear_pointer (&current_event, gdk_event_free);
 }
 
 /**
@@ -2274,8 +2273,7 @@ gtk_menu_popup_at_widget (GtkMenu        *menu,
                            button,
                            activate_time);
 
-  if (current_event)
-    gdk_event_free (current_event);
+  g_clear_pointer (&current_event, gdk_event_free);
 }
 
 /**
@@ -2340,8 +2338,7 @@ gtk_menu_popup_at_pointer (GtkMenu        *menu,
                           GDK_GRAVITY_NORTH_WEST,
                           trigger_event);
 
-  if (current_event)
-    gdk_event_free (current_event);
+  g_clear_pointer (&current_event, gdk_event_free);
 }
 
 static void
