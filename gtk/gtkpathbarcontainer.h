@@ -49,10 +49,11 @@ struct _GtkPathBarContainerClass
    * overflow and the container reports preferred size for the non overflowing
    * children or the ones the container consider that are going to be visible
    */
-  gboolean        (* get_preferred_size_for_requisition)         (GtkWidget                *widget,
+  void            (* get_preferred_size_for_requisition)         (GtkWidget                *widget,
                                                                   GtkRequisition           *available_size,
                                                                   GtkRequisition           *minimum_size,
-                                                                  GtkRequisition           *natural_size);
+                                                                  GtkRequisition           *natural_size,
+                                                                  GtkRequisition           *distributed_size);
 
   /* Padding for future expansion */
   gpointer reserved[10];
@@ -104,14 +105,16 @@ GDK_AVAILABLE_IN_3_20
 gint              gtk_path_bar_container_get_unused_width        (GtkPathBarContainer      *self);
 
 GDK_AVAILABLE_IN_3_20
-gboolean          gtk_path_bar_container_get_preferred_size_for_requisition         (GtkWidget                *widget,
-                                                                           GtkRequisition           *available_size,
-                                                                           GtkRequisition           *minimum_size,
-                                                                           GtkRequisition           *natural_size);
+void              gtk_path_bar_container_get_preferred_size_for_requisition         (GtkWidget                *widget,
+                                                                                     GtkRequisition           *available_size,
+                                                                                     GtkRequisition           *minimum_size,
+                                                                                     GtkRequisition           *natural_size,
+                                                                                     GtkRequisition           *distributed_size);
 GDK_AVAILABLE_IN_3_20
-void
-gtk_path_bar_container_adapt_to_size (GtkPathBarContainer *self,
-                                      GtkRequisition      *available_size);
+void              gtk_path_bar_container_adapt_to_size                              (GtkPathBarContainer      *self,
+                                                                                     GtkRequisition           *available_size);
+GDK_AVAILABLE_IN_3_20
+GList *           gtk_path_bar_container_get_shown_children                         (GtkPathBarContainer      *self);
 
 G_END_DECLS
 

@@ -32,6 +32,7 @@
 #include "gtkpopover.h"
 #include "gtkbuilder.h"
 #include "gtkstylecontext.h"
+#include "gtkseparator.h"
 #include "gtkpathbarboxprivate.h"
 
 #include "gtkintl.h"
@@ -265,7 +266,6 @@ create_path_chunk (GtkPathBar  *self,
                    const gchar *path,
                    const gchar *label,
                    GIcon       *icon,
-                   gboolean     add_separator,
                    gboolean     separator_after_button)
 {
   GtkWidget *button;
@@ -305,14 +305,14 @@ create_path_chunk (GtkPathBar  *self,
   g_signal_connect_swapped (button, "button-release-event",
                             G_CALLBACK (on_path_chunk_button_release_event), path_chunk);
 
-  if (add_separator && !separator_after_button)
+  if (!separator_after_button)
     {
       separator = gtk_label_new (G_DIR_SEPARATOR_S);
       gtk_widget_set_sensitive (separator, FALSE);
       gtk_container_add (GTK_CONTAINER (path_chunk), separator);
     }
   gtk_container_add (GTK_CONTAINER (path_chunk), button);
-  if (add_separator && separator_after_button)
+  if (separator_after_button)
     {
       separator = gtk_label_new (G_DIR_SEPARATOR_S);
       gtk_widget_set_sensitive (separator, FALSE);
@@ -409,7 +409,6 @@ fill_path_bar (GtkPathBar  *self,
   GtkPathBarPrivate *priv = gtk_path_bar_get_instance_private (self);
   GString *current_path ;
   GtkWidget *path_chunk;
-  gboolean add_separator;
   gboolean separator_after_button;
   gint length;
   gint i;
@@ -428,12 +427,10 @@ fill_path_bar (GtkPathBar  *self,
        * in a path_bar in the form of "Home/Documents/Example".
        * However, if only one item is present, add a separator at the end since
        * is visually more pleasant. The result will be in the form of "Home/" */
-      add_separator = length == 1 || (i != length - 1 && priv->inverted) ||
-                      (i != 0 && !priv->inverted);
-      separator_after_button = length == 1 || priv->inverted;
+      separator_after_button = length == 1;
 
       path_chunk = create_path_chunk (self, current_path->str, splitted_path[i],
-                                      NULL, add_separator, separator_after_button);
+                                      NULL, TRUE);
       gtk_path_bar_container_add (GTK_PATH_BAR_CONTAINER (path_bar_container), path_chunk);
     }
 
@@ -481,7 +478,7 @@ update_path_bar (GtkPathBar  *self,
   if (priv->root_path)
     {
       root_chunk = create_path_chunk (self, priv->root_path, priv->root_label,
-                                      priv->root_icon, TRUE, TRUE);
+                                      priv->root_icon, TRUE);
     }
 
   if (g_strcmp0 (priv->root_path, priv->path) == 0)
@@ -543,6 +540,37 @@ update_path_bar (GtkPathBar  *self,
 }
 
 static void
+on_children_shown_changed (GtkPathBarContainer *container,
+                           GParamSpec          *spec,
+                           GtkPathBar          *self)
+{
+  GList *children;
+  GList *shown_children;
+  GList *child;
+  GList *last_shown_child;
+  GList *button_children;
+
+  shown_children = gtk_path_bar_container_get_shown_children (container);
+  last_shown_child = g_list_last (shown_children);
+  children = gtk_path_bar_container_get_children (container);
+
+  for (child = children; child != NULL; child = child->next)
+    {
+      gboolean visible = last_shown_child->data != child->data;
+
+      button_children = gtk_container_get_children (GTK_CONTAINER (child->data));
+      g_print ("button %s, visible %d", gtk_label_get_text (gtk_bin_get_child (button_children->data)), visible);
+      g_print ("what %s\n", G_OBJECT_TYPE_NAME (button_children->data));
+      if (GTK_IS_SEPARATOR (button_children->data))
+        gtk_widget_set_visible (button_children->data, visible);
+      else
+        gtk_widget_set_visible (button_children->next->data, visible);
+    }
+
+  g_print ("\n\n\n");
+}
+
+static void
 update_selected_path (GtkPathBar  *self)
 {
   GtkPathBarPrivate *priv = gtk_path_bar_get_instance_private (self);
@@ -568,6 +596,16 @@ update_selected_path (GtkPathBar  *self)
     }
 
   g_list_free (children);
+}
+
+static void
+on_overflow_clicked (GtkButton *button,
+                     gpointer   user_data)
+{
+  GtkPathBar *self = GTK_PATH_BAR (user_data);
+
+  gtk_path_bar_set_inverted (self, !gtk_path_bar_get_inverted (self));
+
 }
 
 static void
@@ -728,6 +766,20 @@ gtk_path_bar_init (GtkPathBar *self)
   g_type_ensure (GTK_TYPE_PATH_BAR_BOX);
   g_type_ensure (GTK_TYPE_PATH_BAR_CONTAINER);
   gtk_widget_init_template (GTK_WIDGET (self));
+
+  g_signal_connect (priv->path_bar_overflow_root_1, "clicked",
+                    (GCallback) on_overflow_clicked, self);
+  g_signal_connect (priv->path_bar_overflow_root_2, "clicked",
+                    (GCallback) on_overflow_clicked, self);
+  g_signal_connect (priv->path_bar_overflow_tail_1, "clicked",
+                    (GCallback) on_overflow_clicked, self);
+  g_signal_connect (priv->path_bar_overflow_tail_2, "clicked",
+                    (GCallback) on_overflow_clicked, self);
+
+  g_signal_connect (priv->path_bar_container_1, "notify::children-shown",
+                    G_CALLBACK (on_children_shown_changed), self);
+  g_signal_connect (priv->path_bar_container_2, "notify::children-shown",
+                    G_CALLBACK (on_children_shown_changed), self);
 
   priv->inverted = FALSE;
 }

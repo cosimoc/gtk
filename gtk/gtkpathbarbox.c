@@ -68,6 +68,7 @@ gtk_path_bar_box_add (GtkContainer *container,
   GtkPathBarBoxPrivate *priv = gtk_path_bar_box_get_instance_private (self);
 
   priv->children = g_list_append (priv->children, widget);
+  gtk_widget_set_parent (widget, GTK_WIDGET (self));
 
   gtk_widget_queue_resize (GTK_WIDGET (self));
 }
@@ -80,6 +81,7 @@ gtk_path_bar_box_remove (GtkContainer *container,
   GtkPathBarBoxPrivate *priv = gtk_path_bar_box_get_instance_private (self);
 
   priv->children = g_list_remove (priv->children, widget);
+  gtk_widget_unparent (widget);
 
   gtk_widget_queue_resize (GTK_WIDGET (self));
 }
@@ -102,22 +104,13 @@ gtk_path_bar_box_size_allocate (GtkWidget     *widget,
   GtkAllocation child_allocation;
   gint available_size;
   gint n_visible_children = 0;
-  gint current_x = 0;
+  gint current_x = allocation->x;
   gint i;
   GtkRequisition minimum_size;
   GtkRequisition natural_size;
+  GtkRequisition distributed_size;
 
   gtk_widget_get_preferred_size (widget, &minimum_size, &natural_size);
-
-#if 0
-  if (natural_size.width <= allocation->width)
-    {
-      GTK_WIDGET_CLASS (gtk_path_bar_box_parent_class)->size_allocate (widget, allocation);
-
-      return;
-    }
-
-#endif
 
   gtk_widget_set_allocation (widget, allocation);
 
@@ -139,11 +132,8 @@ gtk_path_bar_box_size_allocate (GtkWidget     *widget,
       n_visible_children++;
     }
 
- g_print ("child sizing pathbar %d %d\n", sizes[2].minimum_size, sizes[2].natural_size);
   gtk_distribute_natural_allocation (MAX (0, available_size),
                                      n_visible_children, sizes);
-
- g_print ("child sizing pathbar %d %d\n", sizes[2].minimum_size, sizes[2].natural_size);
 
   for (child = children, i = 0; child != NULL; child = g_list_next (child), i++)
     {
@@ -153,7 +143,6 @@ gtk_path_bar_box_size_allocate (GtkWidget     *widget,
       child_available_size.width = sizes[i].minimum_size;
       child_available_size.height = allocation->height;
 
-      g_print ("child sizing 1 %d %d\n", child_available_size.width, sizes[i].minimum_size);
       if (GTK_IS_PATH_BAR_CONTAINER (child->data))
         {
           gtk_path_bar_container_adapt_to_size (GTK_PATH_BAR_CONTAINER (child->data),
@@ -161,14 +150,14 @@ gtk_path_bar_box_size_allocate (GtkWidget     *widget,
           gtk_path_bar_container_get_preferred_size_for_requisition (GTK_WIDGET (child->data),
                                                                      &child_available_size,
                                                                      &minimum_size,
-                                                                     &natural_size);
+                                                                     &natural_size,
+                                                                     &distributed_size);
 
-          sizes[i].minimum_size = MIN (child_available_size.width, natural_size.width);
+          sizes[i].minimum_size = MIN (child_available_size.width, distributed_size.width);
         }
-      g_print ("child sizing after %d %d\n", child_available_size.width, sizes[i].minimum_size);
 
       child_allocation.x = current_x;
-      child_allocation.y = 0;
+      child_allocation.y = allocation->y;
       child_allocation.width = sizes[i].minimum_size;
       child_allocation.height = allocation->height;
 
@@ -176,8 +165,6 @@ gtk_path_bar_box_size_allocate (GtkWidget     *widget,
 
       current_x += sizes[i].minimum_size;
     }
-
-  g_print ("\n\n\n");
 }
 
 static void
@@ -197,8 +184,8 @@ gtk_path_bar_box_get_preferred_width (GtkWidget *widget,
         continue;
 
       gtk_widget_get_preferred_width (GTK_WIDGET (child->data),
-                                     &child_minimum_width,
-                                     &child_natural_width);
+                                      &child_minimum_width,
+                                      &child_natural_width);
 
       *minimum_width = MAX (*minimum_width, child_minimum_width);
       *natural_width = MAX (*natural_width, child_natural_width);
@@ -241,7 +228,12 @@ gtk_path_bar_box_get_preferred_height (GtkWidget *widget,
 static void
 gtk_path_bar_box_init (GtkPathBarBox *self)
 {
+  GtkPathBarBoxPrivate *priv = gtk_path_bar_box_get_instance_private (self);
+
   gtk_widget_set_has_window (GTK_WIDGET (self), FALSE);
+  gtk_widget_set_redraw_on_allocate (GTK_WIDGET (self), TRUE);
+
+  priv->children = NULL;
 }
 
 static void

@@ -12,7 +12,7 @@ static GtkWidget *files_path_bar_random;
 static GtkWidget *files_path_bar_recent;
 static const gchar* REAL_LOCATION_RANDOM = "file:///boot/efi/EFI/BOOT";
 static const gchar* REAL_LOCATION_RECENT = "recent:///";
-static const gchar* ORIGINAL_PATH = "/test/test 2/test 3/asda lkasdl/pppppppppppppppp/ alskd";
+static const gchar* ORIGINAL_PATH = "/test/test 2/test 3/asda lkasdl/pppppppppppppppp/alskd/t/t/test3/tttttt/tast/aaaaaaaaaaaaaaaaaaaaaaaaaa";
 static const gchar* ROOT_PATH = "/test/test 2/test 3";
 static const gchar* DISPLAY_PATH = "/test/test 2/This Is A Root/asda lkasdl/pppppppppppppppp/ alskd";
 
