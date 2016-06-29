@@ -137,6 +137,7 @@
 
 
 #include "a11y/gtkmenuaccessible.h"
+#include "gdk/gdk-private.h"
 
 #define NAVIGATION_REGION_OVERSHOOT 50  /* How much the navigation region
                                          * extends below the submenu
@@ -4805,11 +4806,58 @@ gtk_menu_deactivate (GtkMenuShell *menu_shell)
     gtk_menu_shell_deactivate (GTK_MENU_SHELL (parent));
 }
 
+static GdkGravity
+get_horizontally_flipped_anchor (GdkGravity anchor)
+{
+  switch (anchor)
+    {
+    case GDK_GRAVITY_STATIC:
+    case GDK_GRAVITY_NORTH_WEST:
+      return GDK_GRAVITY_NORTH_EAST;
+    case GDK_GRAVITY_NORTH:
+      return GDK_GRAVITY_NORTH;
+    case GDK_GRAVITY_NORTH_EAST:
+      return GDK_GRAVITY_NORTH_WEST;
+    case GDK_GRAVITY_WEST:
+      return GDK_GRAVITY_EAST;
+    case GDK_GRAVITY_CENTER:
+      return GDK_GRAVITY_CENTER;
+    case GDK_GRAVITY_EAST:
+      return GDK_GRAVITY_WEST;
+    case GDK_GRAVITY_SOUTH_WEST:
+      return GDK_GRAVITY_SOUTH_EAST;
+    case GDK_GRAVITY_SOUTH:
+      return GDK_GRAVITY_SOUTH;
+    case GDK_GRAVITY_SOUTH_EAST:
+      return GDK_GRAVITY_SOUTH_WEST;
+    default:
+      g_warning ("unknown GdkGravity: %d", anchor);
+      return anchor;
+    }
+}
+
+static void
+moved_to_rect_cb (GdkWindow          *window,
+                  const GdkRectangle *flipped_rect,
+                  const GdkRectangle *slid_rect,
+                  gboolean            flipped_x,
+                  gboolean            flipped_y,
+                  GtkMenu            *menu)
+{
+  g_signal_emit (menu, menu_signals[POPPED_UP], 0, flipped_rect, slid_rect, flipped_x, flipped_y);
+}
+
 static void
 gtk_menu_position (GtkMenu  *menu,
                    gboolean  set_scroll_offset)
 {
   GtkMenuPrivate *priv = menu->priv;
+  GdkWindow *transient_for = NULL;
+  GdkRectangle rect;
+  GtkTextDirection text_direction = GTK_TEXT_DIR_NONE;
+  GdkGravity rect_anchor;
+  GdkGravity menu_anchor;
+  GdkWindow *toplevel;
   GtkWidget *widget;
   GtkRequisition requisition;
   gint x, y;
@@ -4824,14 +4872,62 @@ gtk_menu_position (GtkMenu  *menu,
 
   widget = GTK_WIDGET (menu);
 
-  display = gtk_widget_get_display (widget);
-  pointer = _gtk_menu_shell_get_grab_device (GTK_MENU_SHELL (menu));
-  gdk_device_get_position (pointer, NULL, &x, &y);
-
   /* Realize so we have the proper width and height to figure out
    * the right place to popup the menu.
    */
   gtk_widget_realize (priv->toplevel);
+
+  if (priv->transient_for)
+    {
+      transient_for = priv->transient_for;
+      rect = priv->rect;
+    }
+  else if (priv->widget)
+    {
+      transient_for = gtk_widget_get_window (priv->widget);
+      gtk_widget_get_allocation (priv->widget, &rect);
+      text_direction = gtk_widget_get_direction (priv->widget);
+    }
+
+  if (transient_for)
+    {
+      if (!gtk_widget_get_visible (priv->toplevel))
+        gtk_window_set_type_hint (GTK_WINDOW (priv->toplevel), priv->menu_type_hint);
+
+      if (text_direction == GTK_TEXT_DIR_NONE)
+        text_direction = gtk_widget_get_direction (widget);
+
+      if (text_direction == GTK_TEXT_DIR_RTL)
+        {
+          rect_anchor = get_horizontally_flipped_anchor (priv->rect_anchor);
+          menu_anchor = get_horizontally_flipped_anchor (priv->menu_anchor);
+        }
+      else
+        {
+          rect_anchor = priv->rect_anchor;
+          menu_anchor = priv->menu_anchor;
+        }
+
+      toplevel = gtk_widget_get_window (priv->toplevel);
+
+      g_signal_handlers_disconnect_by_func (toplevel, moved_to_rect_cb, menu);
+      g_signal_connect (toplevel, "moved-to-rect", G_CALLBACK (moved_to_rect_cb), menu);
+
+      GDK_PRIVATE_CALL (gdk_window_move_to_rect) (toplevel,
+                                                  transient_for,
+                                                  &rect,
+                                                  rect_anchor,
+                                                  menu_anchor,
+                                                  priv->anchor_hints,
+                                                  priv->rect_anchor_dx,
+                                                  priv->rect_anchor_dy);
+
+      return;
+    }
+
+  display = gtk_widget_get_display (widget);
+  pointer = _gtk_menu_shell_get_grab_device (GTK_MENU_SHELL (menu));
+  gdk_device_get_position (pointer, NULL, &x, &y);
 
   _gtk_window_get_shadow_width (GTK_WINDOW (priv->toplevel), &border);
 
