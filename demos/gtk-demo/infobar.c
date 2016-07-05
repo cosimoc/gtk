@@ -16,7 +16,7 @@ on_bar_response (GtkInfoBar *info_bar,
 
   if (response_id == GTK_RESPONSE_CLOSE)
     {
-      gtk_widget_hide (GTK_WIDGET (info_bar));
+      gtk_info_bar_hide (info_bar);
       return;
     }
 

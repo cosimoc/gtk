@@ -301,16 +301,6 @@ gtk_info_bar_close (GtkInfoBar *info_bar)
 }
 
 static void
-gtk_info_bar_show (GtkWidget *widget)
-{
-  GtkInfoBarPrivate *priv = GTK_INFO_BAR (widget)->priv;
-
-  GTK_WIDGET_CLASS (gtk_info_bar_parent_class)->show (widget);
-
-  gtk_revealer_set_reveal_child (GTK_REVEALER (priv->revealer), TRUE);
-}
-
-static void
 child_revealed (GObject *object, GParamSpec *pspec, gpointer data)
 {
   GtkWidget *widget = data;
@@ -318,16 +308,6 @@ child_revealed (GObject *object, GParamSpec *pspec, gpointer data)
   GTK_WIDGET_CLASS (gtk_info_bar_parent_class)->hide (widget);
   g_signal_handlers_disconnect_by_func (object, child_revealed, widget);
   g_object_notify (G_OBJECT (widget), "visible");
-}
-
-static void
-gtk_info_bar_hide (GtkWidget *widget)
-{
-  GtkInfoBarPrivate *priv = GTK_INFO_BAR (widget)->priv;
-
-  g_signal_connect_object (priv->revealer, "notify::child-revealed",
-                           G_CALLBACK (child_revealed), widget, 0);
-  gtk_revealer_set_reveal_child (GTK_REVEALER (priv->revealer), FALSE);
 }
 
 static void
@@ -342,9 +322,6 @@ gtk_info_bar_class_init (GtkInfoBarClass *klass)
 
   object_class->get_property = gtk_info_bar_get_property;
   object_class->set_property = gtk_info_bar_set_property;
-
-  widget_class->show = gtk_info_bar_show;
-  widget_class->hide = gtk_info_bar_hide;
 
   klass->close = gtk_info_bar_close;
 
@@ -851,7 +828,7 @@ gtk_info_bar_set_response_sensitive (GtkInfoBar *info_bar,
  * Pressing “Enter” normally activates the default widget.
  *
  * Note that this function currently requires @info_bar to
- * be added to a widget hierarchy. 
+ * be added to a widget hierarchy.
  *
  * Since: 2.18
  */
@@ -1257,4 +1234,27 @@ gtk_info_bar_get_show_close_button (GtkInfoBar *info_bar)
   g_return_val_if_fail (GTK_IS_INFO_BAR (info_bar), FALSE);
 
   return info_bar->priv->show_close_button;
+}
+
+void
+gtk_info_bar_show (GtkInfoBar *info_bar)
+{
+  g_return_if_fail (GTK_IS_INFO_BAR (info_bar));
+
+  gtk_revealer_set_reveal_child (GTK_REVEALER (info_bar->priv->revealer), TRUE);
+}
+
+void
+gtk_info_bar_hide (GtkInfoBar *info_bar)
+{
+  GtkInfoBarPrivate *priv;
+
+  g_return_if_fail (GTK_IS_INFO_BAR (info_bar));
+
+  priv = info_bar->priv;
+
+  g_signal_connect_object (priv->revealer, "notify::child-revealed",
+                           G_CALLBACK (child_revealed), info_bar, 0);
+  gtk_revealer_set_reveal_child (GTK_REVEALER (priv->revealer), FALSE);
+
 }

@@ -130,6 +130,12 @@ void           gtk_info_bar_set_show_close_button  (GtkInfoBar     *info_bar,
 GDK_AVAILABLE_IN_3_10
 gboolean       gtk_info_bar_get_show_close_button  (GtkInfoBar     *info_bar);
 
+GDK_AVAILABLE_IN_3_22
+void           gtk_info_bar_show                   (GtkInfoBar     *info_bar);
+
+GDK_AVAILABLE_IN_3_22
+void           gtk_info_bar_hide                   (GtkInfoBar     *info_bar);
+
 G_END_DECLS
 
 #endif  /* __GTK_INFO_BAR_H__  */
