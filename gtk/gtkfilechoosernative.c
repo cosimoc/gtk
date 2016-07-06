@@ -51,7 +51,10 @@
  * for use with “File/Open” or “File/Save as” commands. By default, this
  * just uses a #GtkFileChooserDialog to implement the actual dialog.
  * However, on certain platforms, such as Windows, the native platform
- * file chooser is uses instead.
+ * file chooser is uses instead. When the application is running in a
+ * sandboxed environment without direct filesystem access (such as Flatpak),
+ * #GtkFileChooserNative may call the proper APIs (portals) to let the user
+ * choose a file and make it available to the application.
  *
  * While the API of #GtkFileChooserNative closely mirrors #GtkFileChooserDialog, the main
  * difference is that there is no access to any #GtkWindow or #GtkWidget for the dialog.
@@ -170,11 +173,26 @@
  *
  * If any of these features are used the regular #GtkFileChooserDialog
  * will be used in place of the native one.
+ *
+ * ## Portal details ## {#gtkfilechooserdialognative-portal}
+ *
+ * When the org.freedesktop.portal.FileChooser portal is available on the
+ * session bus, it is used to bring up an out-of-process file chooser. Depending
+ * on the kind of session the application is running in, this may or may not
+ * be a GTK+ file chooser. In this situation, the following things are not
+ * supported and will be silently ignored:
+ *
+ * * Extra widgets added with gtk_file_chooser_set_extra_widget().
+ *
+ * * Use of custom previews by connecting to #GtkFileChooser::update-preview.
+ *
+ * * Any #GtkFileFilter added with a custom filter.
  */
 
 enum {
   MODE_FALLBACK,
   MODE_WIN32,
+  MODE_PORTAL,
 };
 
 enum {
@@ -285,6 +303,132 @@ gtk_file_chooser_native_set_cancel_label (GtkFileChooserNative *self,
   g_object_notify_by_pspec (G_OBJECT (self), native_props[PROP_CANCEL_LABEL]);
 }
 
+static GtkFileChooserNativeChoice *
+find_choice (GtkFileChooserNative *self,
+             const char           *id)
+{
+  GSList *l;
+
+  for (l = self->choices; l; l = l->next)
+    {
+      GtkFileChooserNativeChoice *choice = l->data;
+
+      if (strcmp (choice->id, id) == 0)
+        return choice;
+    }
+
+  return NULL;
+}
+
+static void
+gtk_file_chooser_native_choice_free (GtkFileChooserNativeChoice *choice)
+{
+  g_free (choice->id);
+  g_free (choice->label);
+  g_strfreev (choice->options);
+  g_strfreev (choice->option_labels);
+  g_free (choice->selected);
+  g_free (choice);
+}
+
+static void
+gtk_file_chooser_native_add_choice (GtkFileChooser  *chooser,
+                                    const char      *id,
+                                    const char      *label,
+                                    const char     **options,
+                                    const char     **option_labels)
+{
+  GtkFileChooserNative *self = GTK_FILE_CHOOSER_NATIVE (chooser);
+  GtkFileChooserNativeChoice *choice = find_choice (self, id);
+
+  if (choice != NULL)
+    {
+      g_warning ("Choice with id %s already added to %s %p", id, G_OBJECT_TYPE_NAME (self), self);
+      return;
+    }
+
+  g_assert ((options == NULL && option_labels == NULL) ||
+            g_strv_length ((char **)options) == g_strv_length ((char **)option_labels));
+
+  choice = g_new0 (GtkFileChooserNativeChoice, 1);
+  choice->id = g_strdup (id);
+  choice->label = g_strdup (label);
+  choice->options = g_strdupv ((char **)options);
+  choice->option_labels = g_strdupv ((char **)option_labels);
+  choice->selected = NULL;
+
+  self->choices = g_slist_append (self->choices, choice);
+
+  gtk_file_chooser_add_choice (GTK_FILE_CHOOSER (self->dialog),
+                               id, label, options, option_labels);
+}
+
+static void
+gtk_file_chooser_native_remove_choice (GtkFileChooser *chooser,
+                                       const char     *id)
+{
+  GtkFileChooserNative *self = GTK_FILE_CHOOSER_NATIVE (chooser);
+  GtkFileChooserNativeChoice *choice = find_choice (self, id);
+
+  if (choice == NULL)
+    {
+      g_warning ("No choice with id %s found in %s %p", id, G_OBJECT_TYPE_NAME (self), self);
+      return;
+    }
+
+  self->choices = g_slist_remove (self->choices, choice);
+
+  gtk_file_chooser_native_choice_free (choice);
+
+  gtk_file_chooser_remove_choice (GTK_FILE_CHOOSER (self->dialog), id);
+}
+
+static void
+gtk_file_chooser_native_set_choice (GtkFileChooser *chooser,
+                                    const char     *id,
+                                    const char     *selected)
+{
+  GtkFileChooserNative *self = GTK_FILE_CHOOSER_NATIVE (chooser);
+  GtkFileChooserNativeChoice *choice = find_choice (self, id);
+
+  if (choice == NULL)
+    {
+      g_warning ("No choice with id %s found in %s %p", id, G_OBJECT_TYPE_NAME (self), self);
+      return;
+    }
+
+  if ((choice->options && !g_strv_contains ((const char *const*)choice->options, selected)) ||
+      (!choice->options && !g_str_equal (selected, "true") && !g_str_equal (selected, "false")))
+    {
+      g_warning ("Not a valid option for %s: %s", id, selected);
+      return;
+    }
+
+  g_free (choice->selected);
+  choice->selected = g_strdup (selected);
+
+  gtk_file_chooser_set_choice (GTK_FILE_CHOOSER (self->dialog), id, selected);
+}
+
+static const char *
+gtk_file_chooser_native_get_choice (GtkFileChooser *chooser,
+                                    const char     *id)
+{
+  GtkFileChooserNative *self = GTK_FILE_CHOOSER_NATIVE (chooser);
+  GtkFileChooserNativeChoice *choice = find_choice (self, id);
+
+  if (choice == NULL)
+    {
+      g_warning ("No choice with id %s found in %s %p", id, G_OBJECT_TYPE_NAME (self), self);
+      return NULL;
+    }
+
+  if (self->mode == MODE_FALLBACK)
+    return gtk_file_chooser_get_choice (GTK_FILE_CHOOSER (self->dialog), id);
+
+  return choice->selected;
+}
+
 static void
 gtk_file_chooser_native_set_property (GObject      *object,
                                       guint         prop_id,
@@ -348,6 +492,7 @@ gtk_file_chooser_native_finalize (GObject *object)
   gtk_widget_destroy (self->dialog);
 
   g_slist_free_full (self->custom_files, g_object_unref);
+  g_slist_free_full (self->choices, (GDestroyNotify)gtk_file_chooser_native_choice_free);
 
   G_OBJECT_CLASS (gtk_file_chooser_native_parent_class)->finalize (object);
 }
@@ -558,6 +703,7 @@ gtk_file_chooser_native_get_files (GtkFileChooser *chooser)
 
   switch (self->mode)
     {
+    case MODE_PORTAL:
     case MODE_WIN32:
       return g_slist_copy_deep (self->custom_files, (GCopyFunc)g_object_ref, NULL);
 
@@ -579,6 +725,10 @@ gtk_file_chooser_native_show (GtkNativeDialog *native)
     self->mode = MODE_WIN32;
 #endif
 
+  if (self->mode == MODE_FALLBACK &&
+      gtk_file_chooser_native_portal_show (self))
+    self->mode = MODE_PORTAL;
+
   if (self->mode == MODE_FALLBACK)
     show_dialog (self);
 }
@@ -597,6 +747,8 @@ gtk_file_chooser_native_hide (GtkNativeDialog *native)
 #ifdef GDK_WINDOWING_WIN32
       gtk_file_chooser_native_win32_hide (self);
 #endif
+    case MODE_PORTAL:
+      gtk_file_chooser_native_portal_hide (self);
       break;
     }
 }
@@ -653,4 +805,8 @@ _gtk_file_chooser_native_iface_init (GtkFileChooserIface *iface)
   iface->set_current_name = gtk_file_chooser_native_set_current_name;
   iface->set_current_folder = gtk_file_chooser_native_set_current_folder;
   iface->get_files = gtk_file_chooser_native_get_files;
+  iface->add_choice = gtk_file_chooser_native_add_choice;
+  iface->remove_choice = gtk_file_chooser_native_remove_choice;
+  iface->set_choice = gtk_file_chooser_native_set_choice;
+  iface->get_choice = gtk_file_chooser_native_get_choice;
 }
